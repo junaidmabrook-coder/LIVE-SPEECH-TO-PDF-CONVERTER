@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice to PDF Converter</title>
+    <!-- Google Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <div class="bg-grid"></div>
+    <div class="main-container">
+        <header>
+            <h1><i class="fas fa-microphone-alt"></i> Live Speech to PDF <span class="highlight">Converter</span></h1>
+            <p>Advanced Real-time Voice Transcription System</p>
+        </header>
+
+        <div class="glass-panel">
+            <div class="controls-bar">
+                <button id="startBtn" class="btn btn-primary" onclick="startRecognition()">
+                    <i class="fas fa-play"></i> Start Recording
+                </button>
+                <div class="mic-visualizer" id="micVisualizer">
+                    <div class="wave"></div>
+                    <div class="wave"></div>
+                    <div class="wave"></div>
+                </div>
+                <button type="submit" form="pdfForm" class="btn btn-success" onclick="prepareText()">
+                    <i class="fas fa-file-pdf"></i> Generate PDF
+                </button>
+                <button id="stopBtn" class="btn btn-danger" onclick="stopRecognition()" disabled>
+                    <i class="fas fa-stop"></i> Stop Recording
+                </button>
+            </div>
+
+            <div class="workspace">
+                <!-- Final Editor Section (NOW TOP) -->
+                <div class="panel editor-panel">
+                    <div class="panel-header">
+                        <i class="fas fa-file-alt"></i> Main Document (Editable)
+                    </div>
+                    <form action="/generate_pdf" method="POST" id="pdfForm">
+                        <textarea name="text" id="final_span"
+                            placeholder="Finalized text collects here. You can text edit manually."
+                            spellcheck="true"></textarea>
+                    </form>
+                </div>
+
+                <!-- Hidden elements for JS compatibility -->
+                <div style="display: none;">
+                    <span id="statusBadge">OFFLINE</span>
+                    <div id="interim_span"></div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>System Status: <span id="systemStatus" style="color: var(--primary-color);">Operational</span></p>
+        </footer>
+    </div>
+
+    <script>
+        let recognition;
+        let isRecording = false;
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusBadge = document.getElementById('statusBadge');
+        const micVisualizer = document.getElementById('micVisualizer');
+        const finalSpan = document.getElementById('final_span');
+        const interimSpan = document.getElementById('interim_span');
+        const systemStatus = document.getElementById('systemStatus');
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = function () {
+                isRecording = true;
+                setRecordingState(true);
+            };
+
+            recognition.onend = function () {
+                isRecording = false;
+                setRecordingState(false);
+            };
+
+            recognition.onresult = function (event) {
+                let interimTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        // Transfer to final
+                        transferText(event.results[i][0].transcript);
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                }
+
+                // Update live panel
+                if (interimTranscript.length > 0) {
+                    interimSpan.innerHTML = `<span class="typing-effect">${interimTranscript}</span>`;
+                    interimSpan.scrollTop = interimSpan.scrollHeight;
+                } else {
+                    // Keep placeholder if empty and not recording, or just blank?
+                    // If recording, we want to show blank is fine.
+                    if (!isRecording && finalSpan.value === '') interimSpan.innerHTML = '<span class="placeholder-text">Waiting for audio input...</span>';
+                }
+            };
+
+            recognition.onerror = function (event) {
+                console.error("Speech recognition error", event.error);
+                statusBadge.innerText = "ERROR";
+                statusBadge.style.color = "red";
+                systemStatus.innerText = "Error: " + event.error;
+            };
+
+        } else {
+            alert("Web Speech API not supported in this browser.");
+        }
+
+        function startRecognition() {
+            if (recognition && !isRecording) {
+                recognition.start();
+            }
+        }
+
+        function stopRecognition() {
+            if (recognition && isRecording) {
+                recognition.stop();
+            }
+        }
+
+        function setRecordingState(active) {
+            if (active) {
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                startBtn.classList.add('disabled');
+                stopBtn.classList.remove('disabled');
+
+                statusBadge.innerText = "ONLINE";
+                statusBadge.className = "status-badge active";
+                micVisualizer.classList.add('active');
+
+                // Clear placeholder
+                if (interimSpan.innerText.includes("Waiting")) interimSpan.innerHTML = "";
+
+            } else {
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                startBtn.classList.remove('disabled');
+                stopBtn.classList.add('disabled');
+
+                statusBadge.innerText = "OFFLINE";
+                statusBadge.className = "status-badge";
+                micVisualizer.classList.remove('active');
+            }
+        }
+
+        function transferText(text) {
+            // Animate or just append
+            // We'll append with a subtle flash in the textarea or just straightforward append
+            // For improved UX, let's append neatly
+            let currentText = finalSpan.value;
+            // Add space if needed
+            if (currentText.length > 0 && !currentText.endsWith(' ') && !currentText.endsWith('\n')) {
+                finalSpan.value += ' ';
+            }
+            finalSpan.value += text;
+            finalSpan.scrollTop = finalSpan.scrollHeight;
+
+            // Clear interim immediately after transfer
+            interimSpan.innerHTML = '';
+
+            // Visual feedback on arrow handled by toggle class if we wanted, 
+            // but CSS transition on textarea focus/input is usually enough.
+            const arrow = document.querySelector('.transfer-icon i');
+            arrow.style.color = 'var(--primary-color)';
+            arrow.style.transform = 'scale(1.2)';
+            setTimeout(() => {
+                arrow.style.color = 'rgba(255, 255, 255, 0.2)';
+                arrow.style.transform = 'scale(1)';
+            }, 200);
+        }
+
+        function prepareText() {
+            // No hidden input needed if we used <textarea name="text"> directly in form
+            // But if we used a specific ID logic...
+            // The python code expects 'text' in form.
+            // Our textarea has name="text", so we are good.
+        }
+    </script>
+</body>
+
+</html>
